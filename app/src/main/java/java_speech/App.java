@@ -42,9 +42,12 @@ public class App {
         // Get the number of windows
         int numWindows = (int) Math.floor((double) filteredMZR.length / (SAMPLING_FREQUENCY * TIME_WINDOW));
 
-        System.out.print("Number of windows:" + numWindows);
+        System.out.println("Number of windows:" + numWindows);
 
-        // iterate through the windows
+        // Create an array to store combined RMS values and spectral features in order
+        double[][] combinedFeatures = new double[numWindows][5];
+
+        // Iterate through the windows
         for (int i = 0; i < numWindows; i++) {
             // Get the start and end indices of the current window
             int startIndex = i * SAMPLING_FREQUENCY * TIME_WINDOW;
@@ -55,16 +58,25 @@ public class App {
             System.arraycopy(filteredMZR, startIndex, windowData, 0, endIndex - startIndex);
 
             // Calculate RMS for the current window
-            double rmsValues = calculateMeanRMS(windowData, SAMPLING_FREQUENCY, FRAME_LENGTH, HOP_LENGTH);
-
-            System.out.println("RMS: " + rmsValues);
+            double rmsValue = calculateMeanRMS(windowData, SAMPLING_FREQUENCY, FRAME_LENGTH, HOP_LENGTH);
 
             // Perform FFT on the window data
             Complex[] rfftOutput = rfft(windowData);
 
             // Calculate spectral features
             double[] spectralFeatures = calculateKurtosisSkewnessVarianceMeanFromRFFT(rfftOutput);
-            System.out.println("Spectral Features: " + java.util.Arrays.toString(spectralFeatures));
+
+            // Store features in the order skewness, variance, kurtosis, rms, mean
+            combinedFeatures[i][0] = spectralFeatures[1]; // skewness
+            combinedFeatures[i][1] = spectralFeatures[2]; // variance
+            combinedFeatures[i][2] = spectralFeatures[0]; // kurtosis
+            combinedFeatures[i][3] = rmsValue; // rms
+            combinedFeatures[i][4] = spectralFeatures[3]; // mean
+        }
+
+        // Print the combined features
+        for (int i = 0; i < numWindows; i++) {
+            System.out.println("Window " + (i + 1) + ": " + java.util.Arrays.toString(combinedFeatures[i]));
         }
 
         // Calculate spectral features
