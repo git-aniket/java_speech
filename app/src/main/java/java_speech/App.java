@@ -7,11 +7,18 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 import org.apache.commons.math3.complex.Complex;
 
 import com.opencsv.CSVReader;
 import com.opencsv.exceptions.CsvValidationException;
+
+import ai.onnxruntime.OnnxTensor;
+import ai.onnxruntime.OrtEnvironment;
+import ai.onnxruntime.OrtException;
+import ai.onnxruntime.OrtSession;
 
 public class App {
     private static double[] MXR;
@@ -28,7 +35,7 @@ public class App {
         return "Hello World!";
     }
 
-    public static void main(String[] args) throws CsvValidationException {
+    public static void main(String[] args) throws CsvValidationException, OrtException {
         // Print the current working directory
         System.out.println("Current working directory: " + System.getProperty("user.dir"));
         System.out.println(new App().getGreeting());
@@ -66,7 +73,12 @@ public class App {
             // Calculate spectral features
             double[] spectralFeatures = calculateKurtosisSkewnessVarianceMeanFromRFFT(rfftOutput);
 
-            // Store features in the order skewness, variance, kurtosis, rms, mean
+            // Calculate spectral features
+            // Spectral Skewness
+            // Spectral Variance
+            // Spectral Kurtosis
+            // RMS
+            // Mean // Store features in the order skewness, variance, kurtosis, rms, mean
             combinedFeatures[i][0] = spectralFeatures[1]; // skewness
             combinedFeatures[i][1] = spectralFeatures[2]; // variance
             combinedFeatures[i][2] = spectralFeatures[0]; // kurtosis
@@ -79,12 +91,52 @@ public class App {
             System.out.println("Window " + (i + 1) + ": " + java.util.Arrays.toString(combinedFeatures[i]));
         }
 
-        // Calculate spectral features
-        // Spectral Skewness
-        // Spectral Variance
-        // Spectral Kurtosis
-        // RMS
-        // Mean
+        // Load the ONNX model
+        String modelPath = "init_model_xgb.onnx"; // Update with the actual path
+        try (OrtEnvironment env = OrtEnvironment.getEnvironment();
+                OrtSession session = env.createSession(modelPath, new OrtSession.SessionOptions())) {
+
+            // Prepare input data (example: using combinedFeatures)
+            float[][] inputData = new float[combinedFeatures.length][combinedFeatures[0].length];
+            for (int i = 0; i < combinedFeatures.length; i++) {
+                for (int j = 0; j < combinedFeatures[i].length; j++) {
+                    inputData[i][j] = (float) combinedFeatures[i][j];
+                }
+            }
+
+            // Create ONNX input tensor
+            OnnxTensor inputTensor = OnnxTensor.createTensor(env, inputData);
+
+            // Prepare input map
+            Map<String, OnnxTensor> inputs = new HashMap<>();
+            inputs.put("input", inputTensor); // Replace "input_name" with the actual input name of your model
+
+            // Run inference
+            try (OrtSession.Result results = session.run(inputs)) {
+                // Get the output
+                Object rawOutput = results.get(0).getValue();
+            
+                switch (rawOutput) {
+                    case long[][] output -> {
+                        System.out.println("Model output (long[][]): ");
+                        for (long[] row : output) {
+                            System.out.println(java.util.Arrays.toString(row));
+                        }
+                    }
+                    case float[][] output -> {
+                        System.out.println("Model output (float[][]): ");
+                        for (float[] row : output) {
+                            System.out.println(java.util.Arrays.toString(row));
+                        }
+                    }
+                    case long[] output -> {
+                        System.out.println("Model output (long[]): ");
+                        System.out.println(java.util.Arrays.toString(output));
+                    }
+                    default -> System.out.println("Unexpected output type: " + rawOutput.getClass().getName());
+                }
+            }
+        }
     }
 
     public static double calculateMeanRMS(double[] audioSignal, int sampleRate, int frameLength, int hopLength) {
@@ -179,7 +231,8 @@ public class App {
                 // Read data into arrays
                 String[] data;
                 int count = 0;
-                int MAX_DATA = 10 * 6000; // 10 seconds * 6000 samples per second
+                int NUM_OF_SECONDS = 30; // Number of seconds to read
+                int MAX_DATA = NUM_OF_SECONDS * 6000; // seconds * 6000 samples per second
 
                 // Skip the header line
                 reader.readNext();
