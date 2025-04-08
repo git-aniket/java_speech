@@ -18,75 +18,54 @@ public class App {
     private static double[] MYR;
     private static double[] MZR;
 
-    private static final String  FILE_NAME_STRING = "pro_10940.csv";
-
-    private static double calculateSpectralVariance(double[] windowData) {
-        if (windowData == null || windowData.length == 0) {
-            throw new IllegalArgumentException("Input array is empty or null");
-        }
-        double sum = 0;
-        for (double p : windowData) {
-            sum += p;
-        }
-        double mean = sum / windowData.length;
-        double sumSqr = 0;
-        for (double p : windowData) {
-            sumSqr += Math.pow(p - mean, 2);
-        }
-        double variance = sumSqr / windowData.length;
-        return variance;
-    }
-
-    private static double calculateSpectralKurtosis(double[] windowData) {
-        if (windowData == null || windowData.length == 0) {
-            throw new IllegalArgumentException("Input array is empty or null");
-        }
-        double sum = 0;
-        for (double p : windowData) {
-            sum += p;
-        }
-        double mean = sum / windowData.length;
-        double sumSqr = 0;
-        double sumQuad = 0;
-        for (double p : windowData) {
-            double diff = p - mean;
-            sumSqr += diff * diff;
-            sumQuad += diff * diff * diff * diff;
-        }
-        double variance = sumSqr / windowData.length;
-        double kurtosis = (sumQuad / windowData.length) / (variance * variance) - 3;
-        return kurtosis;
-    }
+    private static final String FILE_NAME_STRING = "pro_10940.csv";
+    private static final int SAMPLING_FREQUENCY = 1000;
+    private static final int TIME_WINDOW = 6; // in seconds
+    private static final int HOP_LENGTH = 512; // in number of samples
+    private static final int FRAME_LENGTH = 2048; // in number of samples
 
     public String getGreeting() {
         return "Hello World!";
     }
 
     public static void main(String[] args) throws CsvValidationException {
-        //Print the current working directory
+        // Print the current working directory
         System.out.println("Current working directory: " + System.getProperty("user.dir"));
         System.out.println(new App().getGreeting());
         readData(FILE_NAME_STRING);
 
         // Use the filter function to filter the MZR data
         double[] filteredMZR = highPassButterworthFilter2ndOrder75Hz(MZR);
-        System.out.println("Filtered MZR: " + java.util.Arrays.toString(filteredMZR));
 
-        // // Calculate the spectral features every 6000 samples
-        // int sampleRate = 1000;
-        // int noOfSeconds = 6; 
-        // int stepSize = sampleRate*noOfSeconds; // 6000 samples
-        // int numWindows = (int) Math.floor((double) filteredMZR.length / stepSize);
-        // double[][] spectralFeatures = new double[numWindows][3]; // 3 features: skewness, variance, kurtosis
+        System.out.print("The size of the array is: " + filteredMZR.length);
 
-        // for (int i = 0; i < numWindows; i++) {
-        //     int startIndex = i * stepSize;
-        //     int endIndex = Math.min((i + 1) * stepSize, filteredMZR.length);
-        //     double[] windowData = java.util.Arrays.copyOfRange(filteredMZR, startIndex, endIndex);
-        //     spectralFeatures[i][0] = calculateSpectralSkewness(windowData);
-        //     spectralFeatures[i][1] = calculateSpectralVariance(windowData);
-        //     spectralFeatures[i][2] = calculateSpectralKurtosis(windowData);
-        // }
+        // Get the number of windows
+        int numWindows = (int) Math.floor((double) filteredMZR.length / (SAMPLING_FREQUENCY * TIME_WINDOW));
+
+        System.out.print("Number of windows:" + numWindows);
+
+        // iterate through the windows
+        for (int i = 0; i < numWindows; i++) {
+            // Get the start and end indices of the current window
+            int startIndex = i * SAMPLING_FREQUENCY * TIME_WINDOW;
+            int endIndex = Math.min(startIndex + SAMPLING_FREQUENCY * TIME_WINDOW, filteredMZR.length);
+
+            // Create a new array for the current window
+            double[] windowData = new double[endIndex - startIndex];
+            System.arraycopy(filteredMZR, startIndex, windowData, 0, endIndex - startIndex);
+
+            // Calculate RMS for the current window
+            double rmsValues = calculateMeanRMS(windowData, SAMPLING_FREQUENCY, FRAME_LENGTH, HOP_LENGTH);
+
+            System.out.println("RMS: " + rmsValues);
+
+            // Perform FFT on the window data
+            Complex[] rfftOutput = rfft(windowData);
+
+            // Calculate spectral features
+            double[] spectralFeatures = calculateKurtosisSkewnessVarianceMeanFromRFFT(rfftOutput);
+            System.out.println("Spectral Features: " + java.util.Arrays.toString(spectralFeatures));
+        }
 
         // Calculate spectral features
         // Spectral Skewness
@@ -96,77 +75,86 @@ public class App {
         // Mean
     }
 
-    private static double calculateSpectralSkewness(double[] windowData) {
-        // Calculate the power spectral density (PSD) using Welch's method
-        double[] psd = welchPSD(windowData, 1000, 1000, 0.5);
+    public static double calculateMeanRMS(double[] audioSignal, int sampleRate, int frameLength, int hopLength) {
+        int numFrames = (int) Math.ceil((double) audioSignal.length / hopLength);
+        double[] rmsValues = new double[numFrames];
 
-        // Calculate the spectral skewness
-        double sum = 0;
-        double sumSqr = 0;
-        double sumCube = 0;
-        for (double p : psd) {
-            sum += p;
-            sumSqr += p * p;
-            sumCube += p * p * p;
+        for (int i = 0; i < numFrames; i++) {
+            int start = i * hopLength;
+            int end = Math.min(start + frameLength, audioSignal.length);
+            double sumSquares = 0;
+
+            for (int j = start; j < end; j++) {
+                sumSquares += audioSignal[j] * audioSignal[j];
+            }
+
+            double frameRms = Math.sqrt(sumSquares / (end - start));
+            rmsValues[i] = frameRms;
         }
-        double mean = sum / psd.length;
-        double variance = (sumSqr / psd.length) - (mean * mean);
-        double skewness = (sumCube / psd.length) - (3 * mean * variance) - (mean * mean * mean);
-        skewness /= Math.pow(variance, 1.5);
-        return skewness;
+
+        double sumRms = 0;
+        for (double rms : rmsValues) {
+            sumRms += rms;
+        }
+
+        return sumRms / numFrames;
     }
 
-    // Calculate the power spectral density (PSD) using Welch's method
-    private static double[] welchPSD(double[] data, int nperseg, int noverlap, double detrend) {
-        int nfft = 2 * nperseg;
+    private static Complex[] rfft(double[] data) {
         int n = data.length;
-        double[] psd = new double[nfft];
+        Complex[] fft = new Complex[n / 2 + 1]; // RFFT returns n/2 + 1 frequency components
 
-        for (int i = 0; i < (n - nperseg); i += (nperseg - noverlap)) {
-            double[] segment = java.util.Arrays.copyOfRange(data, i, i + nperseg);
-            double[] window = new double[nperseg];
-            for (int j = 0; j < nperseg; j++) {
-                window[j] = 0.5 * (1 - Math.cos(2 * Math.PI * j / (nperseg - 1)));
+        // Perform the FFT using the Cooley-Tukey algorithm
+        for (int k = 0; k <= n / 2; k++) {
+            double real = 0;
+            double imag = 0;
+            for (int t = 0; t < n; t++) {
+                double angle = -2 * Math.PI * k * t / n;
+                real += data[t] * Math.cos(angle);
+                imag += data[t] * Math.sin(angle);
             }
-            double[] scaledSegment = new double[nperseg];
-            for (int j = 0; j < nperseg; j++) {
-                scaledSegment[j] = segment[j] * window[j];
-            }
-            double[] fft = fft(scaledSegment);
-            for (int j = 0; j < nfft / 2; j++) {
-                psd[j] += Math.pow(fft[j], 2);
-            }
-        }
-
-        for (int i = 0; i < nfft / 2; i++) {
-            psd[i] /= (n * nfft);
-        }
-        return psd;
-    }
-
-    // Compute the Fast Fourier Transform (FFT) of a sequence
-    private static double[] fft(double[] data) {
-        int n = data.length;
-        double[] fft = new double[n];
-        double[] w = new double[n / 2];
-
-        for (int i = 0; i < n / 2; i++) {
-            Complex w_i = new Complex(Math.cos(2 * Math.PI * i / n), Math.sin(2 * Math.PI * i / n));
-            w[i] = w_i.getReal();
-        }
-
-        for (int i = 0; i < n; i++) {
-            double sum = 0;
-            for (int j = 0; j < n / 2; j++) {
-                sum += data[i + j] * w[j];
-            }
-            fft[i] = sum;
+            fft[k] = new Complex(real, imag);
         }
 
         return fft;
     }
 
-    public static void readData(String fileName) throws CsvValidationException{
+    private static double[] calculateKurtosisSkewnessVarianceMeanFromRFFT(Complex[] rfftOutput) {
+        // Calculate the magnitude spectrum
+        double[] magnitudes = new double[rfftOutput.length];
+        for (int i = 0; i < rfftOutput.length; i++) {
+            magnitudes[i] = rfftOutput[i].abs(); // Magnitude = sqrt(real^2 + imag^2)
+        }
+
+        // Calculate the mean of the magnitudes
+        double sum = 0;
+        for (double magnitude : magnitudes) {
+            sum += magnitude;
+        }
+        double mean = sum / magnitudes.length;
+
+        // Calculate the variance, third moment, and fourth moment
+        double sumSquaredDiff = 0;
+        double sumThirdDiff = 0;
+        double sumFourthDiff = 0;
+        for (double magnitude : magnitudes) {
+            double diff = magnitude - mean;
+            sumSquaredDiff += diff * diff;
+            sumThirdDiff += diff * diff * diff;
+            sumFourthDiff += diff * diff * diff * diff;
+        }
+        double variance = sumSquaredDiff / magnitudes.length;
+
+        // Calculate skewness
+        double skewness = (sumThirdDiff / magnitudes.length) / Math.pow(variance, 1.5);
+
+        // Calculate kurtosis
+        double kurtosis = (sumFourthDiff / magnitudes.length) / (variance * variance) - 3;
+
+        return new double[] { kurtosis, skewness, variance, mean };
+    }
+
+    public static void readData(String fileName) throws CsvValidationException {
         try {
             File file = new File(fileName);
             // Read the header line
@@ -179,7 +167,7 @@ public class App {
                 // Read data into arrays
                 String[] data;
                 int count = 0;
-                int MAX_DATA = 10*6000; // 10 seconds * 6000 samples per second
+                int MAX_DATA = 10 * 6000; // 10 seconds * 6000 samples per second
 
                 // Skip the header line
                 reader.readNext();
@@ -193,9 +181,9 @@ public class App {
             }
 
             // Print the data arrays
-            System.out.println("MXR: " + java.util.Arrays.toString(MXR));
-            System.out.println("MYR: " + java.util.Arrays.toString(MYR));
-            System.out.println("MZR: " + java.util.Arrays.toString(MZR));
+            // System.out.println("MXR: " + java.util.Arrays.toString(MXR));
+            // System.out.println("MYR: " + java.util.Arrays.toString(MYR));
+            // System.out.println("MZR: " + java.util.Arrays.toString(MZR));
         } catch (FileNotFoundException e) {
             System.out.println("File not found.");
         } catch (IOException e) {
@@ -204,22 +192,21 @@ public class App {
     }
 
     private static double[] highPassButterworthFilter2ndOrder75Hz(double[] data) {
-        double fs = 1000.0; // sampling frequency
         double fc = 75.0; // cutoff frequency
         double Q = Math.sqrt(2) / 2; // Q factor for Butterworth filter
-    
-        double w0 = 2 * Math.PI * fc / fs;
+
+        double w0 = 2 * Math.PI * fc / SAMPLING_FREQUENCY;
         double alpha = Math.sin(w0) / (2 * Q);
-    
+
         double b0 = (1 + Math.cos(w0)) / 2;
         double b1 = -(1 + Math.cos(w0));
         double b2 = (1 + Math.cos(w0)) / 2;
         double a0 = 1 + alpha;
         double a1 = -2 * Math.cos(w0);
         double a2 = 1 - alpha;
-    
+
         double[] filteredData = new double[data.length];
-    
+
         for (int i = 0; i < data.length; i++) {
             switch (i) {
                 case 0:
@@ -229,11 +216,12 @@ public class App {
                     filteredData[i] = (b0 * data[i] + b1 * data[i - 1] - a1 * filteredData[i - 1]) / a0;
                     break;
                 default:
-                    filteredData[i] = (b0 * data[i] + b1 * data[i - 1] + b2 * data[i - 2] - a1 * filteredData[i - 1] - a2 * filteredData[i - 2]) / a0;
+                    filteredData[i] = (b0 * data[i] + b1 * data[i - 1] + b2 * data[i - 2] - a1 * filteredData[i - 1]
+                            - a2 * filteredData[i - 2]) / a0;
                     break;
             }
         }
-    
+
         return filteredData;
     }
 
@@ -244,4 +232,3 @@ public class App {
         return newArray;
     }
 }
-
