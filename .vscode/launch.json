@@ -6,25 +6,20 @@
     "configurations": [
         {
             "type": "java",
-            "name": "App",
+            "name": "Debug App",
             "request": "launch",
             "mainClass": "java_speech.App",
-            "projectName": "app"
+            "projectName": "app",
+            "sourcePaths": ["${workspaceFolder}/app/src/main/java"],
+            "classPaths": ["${workspaceFolder}/app/build/classes/java/main"],
+            "preLaunchTask": "gradle: build"
         },
         {
             "type": "java",
-            "request": "launch",
-            "name": "Launch Java App",
-            "mainClass": "App.java",
-            "projectName": "java_speech",
-            "preLaunchTask": "build"
-        }
-    ],
-    "inputs": [
-        {
-            "type": "promptString",
-            "id": "mainClass",
-            "description": "Enter the fully qualified name of the main class to launch (e.g., java_speech.App)"
+            "name": "Attach to Gradle",
+            "request": "attach",
+            "hostName": "localhost",
+            "port": 5005
         }
     ]
 }

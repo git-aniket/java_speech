@@ -50,3 +50,20 @@ tasks.named('test') {
     // Use JUnit Platform for unit tests.
     useJUnitPlatform()
 }
+
+// Add debug configuration
+tasks.named('run') {
+    // Enable debugging
+    debugOptions {
+        enabled = false
+        port = 5005
+        server = true
+        suspend = true
+    }
+}
+
+// Enable debug information in compilation
+tasks.withType(JavaCompile) {
+    options.debug = true
+    options.debugOptions.debugLevel = "source,lines,vars"
+}
